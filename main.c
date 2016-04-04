@@ -45,59 +45,42 @@ void GlobalInterruptEnable() {
 }
 
 void BuildCanMessage(CAN_Message_t *msg) {
+    uint16_t tmp;
+    
     // Build Message Header
-    msg->MessageID = CAN_RESPONSE;
-    msg->EID = false;
-    msg->RTR = false;
-    msg->priority = LEVEL0;
+    msg->DestinationAddress = 0x00;
+    msg->SourceAddress = 0x01;
+    msg->Command = 0x1A;
     
     // Read Sensors
     HDC1000_ReadTempHumidity(&temperature, &humidity);
     pressure = LPS25HB_ReadPressureMillibars();
     
     // Build Data Packet
-    uint16_t tmp = (uint16_t)(temperature * 10.0);
-    msg->data[0] = tmp >> 8;    // Temperature High Bits
-    msg->data[1] = tmp;         // Temperature Low Bits
-    msg->data[2] = (uint8_t)(humidity);    // Humidity Bits
-    tmp = (uint16_t)(pressure * 10.0);
-    msg->data[3] = tmp >> 8;    // Pressure High Bits
-    msg->data[4] = tmp;         // Pressure Low Bits
+    tmp = temperature * 10.0;
+    msg->Data[0] = tmp >> 8;    // Temperature High Bits
+    msg->Data[1] = tmp;         // Temperature Low Bits
+    msg->Data[2] = humidity;    // All Humidity Bits
+    tmp = pressure * 10.0;
+    msg->Data[3] = tmp >> 8;    // Pressure High Bits
+    msg->Data[4] = tmp;         // Pressure Low Bits
     
-    // Set Message Length Field (DLC)
-    msg->DLC = 5;
+    // Set Data Length
+    msg->DataLength = 5;
 }
 
-#ifdef TESTING
-void ParseCanMessage(CAN_Message_t *msg) {
-    uint16_t tmp;
-    tmp = msg->data[0];                 // Temperature High Bits
-    tmp = (tmp << 8) | msg->data[1];    // Temperature Low Bits
-    can_temperature = tmp / 10.0;
-    can_humidity = msg->data[2];
-    tmp = msg->data[3];
-    tmp = (tmp << 8) | msg->data[4];
-    can_pressure = tmp / 10.0;
+void BuildNetworkMessage(CAN_Message_t *msg) {
+    msg->DestinationAddress = 0x00;
+    msg->SourceAddress = 0x01;
+    msg->Command = 0x01; // I'm here message
+    msg->DataLength = 0;
 }
-
-void BuildRequestMessage(CAN_Message_t *msg) {
-    msg->MessageID = CAN_REQUEST;
-    msg->priority = LEVEL0;
-    msg->RTR = false;
-    msg->EID = false;
-    msg->DLC = 0;
-}
-#endif
 
 void BoardInit() {
     // Initialize Peripherals
     PORTS_Init();
     I2CMaster_Init();
-#ifdef TESTING
-    CAN_Init(0, true); // CAN in Loopback Mode
-#else
-    CAN_Init(0, false);
-#endif
+    CAN_Init(500000); // CAN in Normal Mode, 500kBit/s
     
     // Initialize Devices
     HDC1000_Init(0, DEGREES_F);
@@ -112,28 +95,17 @@ void main(void) {
     
     BoardInit();
     
-#ifdef TESTING
-    // Send a CAN Request
-    BuildRequestMessage(&sMessage);
+    // Network Connect Message
+    BuildNetworkMessage(&sMessage);
     CAN_EnqueueMessage(&sMessage);
-#endif
     
     while(1) {
+        
         if(!CAN_RXQueueIsEmpty()) {
             CAN_DequeueMessage(&rMessage);
-            if(rMessage.MessageID == CAN_REQUEST) { // Sensor Readings are Requested
-                // Take Sensor Readings and Build CAN Message to Send
-                BuildCanMessage(&sMessage);
-                
-                // Enqueue CAN Message to Be Sent
-                CAN_EnqueueMessage(&sMessage);
-            }
-#ifdef TESTING
-            // If we are in Testing mode, CAN Messages are received by this device too
-            else if(rMessage.MessageID == CAN_RESPONSE) { // Sensor Readings are Requested
-                ParseCanMessage(&rMessage);
-            }
-#endif
+            // TODO: Check Message Contents
+            BuildCanMessage(&sMessage);
+            CAN_EnqueueMessage(&sMessage);  
         }
     }
     

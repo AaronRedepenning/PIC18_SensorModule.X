@@ -24,7 +24,7 @@ CLEAN_SUBPROJECTS=${CLEAN_SUBPROJECTS_${SUBPROJECTS}}
 
 
 # Project Name
-PROJECTNAME=DRC_SensorModule.X
+PROJECTNAME=PIC18_SensorModule.X
 
 # Active Configuration
 DEFAULTCONF=default

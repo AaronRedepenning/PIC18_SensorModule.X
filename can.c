@@ -13,9 +13,15 @@
 #define ECAN_SET_ENHANCED_MODE  0x40
 #define ECAN_SET_FIFO_MODE      0xA0
 
-#define BRGCON1_1MBIT           0x01
-#define BRGCON2_1MBIT           0
-#define BRGCON3_1MBIT           0
+#define BRGCON1_1MBIT           0x00
+#define BRGCON2_1MBIT           0xA8
+#define BRGCON3_1MBIT           0x01
+#define BRGCON1_625kBIT         0x01
+#define BRGCON2_625kBIT         0x98
+#define BRGCON3_625kBIT         0x01
+#define BRGCON1_500kBIT         0x01
+#define BRGCON2_500kBIT         0xA8
+#define BRGCON3_500kBIT         0x01
 
 #define RX_QUEUE_SIZE           10
 #define TX_QUEUE_SIZE           10
@@ -52,9 +58,9 @@ This Function ...
 Parameters:	None
 Return:		None
 *********************************************************************/
-void CAN_Init(long bitrate, bool loopback)
+void CAN_Init(long bitrate)
 {
-    // Initialize Queues
+    // Initialize Transmit and Receive Queues
     RXHead = 0;
     RXTail = 0;
     RXQueueCount = 0;
@@ -62,45 +68,47 @@ void CAN_Init(long bitrate, bool loopback)
     TXTail = 0;
     TXQueueCount = 0;
     
-    // Force the CAN peripherial into Config mode
+    // Force the CAN peripheral into configuration mode
 	CAN_SetMode(CAN_CONFIG_MODE);
 	
-	// Set the bitrate, currently set to 625kHz
+	// Set the desired bit rate
 	CAN_SetBitrate(bitrate);
 	
-	// Place the module in enhanced legacy mode
-	ECANCON |= ECAN_SET_ENHANCED_MODE;
+	// Place the module into enhanced FIFO mode
+	ECANCON |= ECAN_SET_FIFO_MODE;
     
-    // Disable filters, accept all messages
-	RXB0CONbits.RXM1 = 1;
-    RXB0CONbits.RXM1 = 1;
+    // Disable filters and receive all messages in RX buffers
+	RXB0CONbits.RXM1 = RXB1CONbits.RXM1 = 1;
+    B0CONbits.RXM1 = B1CONbits.RXM1 = B2CONbits.RXM1 = B3CONbits.RXM1 = 1;
+    B4CONbits.RXM1 = B5CONbits.RXM1 = 1;
     
-    // All additional buffers placed in transmit mode
-    BSEL0 = 0b11111100;
+    // All programmable buffers are configured as RX buffers
+    BSEL0 = 0xFC;
     
+    // Disable all filters
     RXFCON0 = 0;
     RXFCON1 = 0;
     SDFLC = 0;
     
+    // No Masks
     MSEL0 = MSEL1 = MSEL2 = MSEL3 = 0xFF;
     
-    CIOCON = 0b01100001;
+    // Configure ECAN module to use crystal oscillator
+    CIOCON = 0x01;
     
-    PIE5 = 0;
+    // Clear all interrupt flags
+    PIR5 = 0;
     
-    if(loopback) {
-        CAN_SetMode(CAN_LOOPBACK_MODE);
-    }
-    else {
-        CAN_SetMode(CAN_NORMAL_MODE);
-    }
-    
-    // Set Interrupt Bits
+    // Enable CAN interrupts on RX and TX
     TXIntsEnabled = false;
-    PIE5bits.RXBnIE = 1;
-    PIE5bits.IRXIE = 1;
-    TXBIEbits.TX0IE = 1;
-    BIE0bits.RXB0IE = 1;
+    PIE5bits.RXBnIE = 1;    // RX Interrupt Enable
+    PIE5bits.IRXIE = 1;     // Error Message Interrupt Enable
+    TXBIEbits.TX0IE = 1;    // TX Interrupt Enable
+    BIE0 = 0xFF;            // RX Interrupt Enable for Programmable Buffers
+    
+    // Put ECAN module in normal mode to start receiving messages
+    //CAN_SetMode(CAN_NORMAL_MODE);
+    CAN_SetMode(CAN_LOOPBACK_MODE);
 }
 
 /*********************************************************************
@@ -111,50 +119,33 @@ This Function ...
 Parameters:	None
 Return:		None
 *********************************************************************/
-bool CAN_SendOneMessage(CAN_Message_t *msg)
-{
-    if(msg == NULL) return false;
-    // CAN cannot send more than 8 bytes of data
-    if(msg->DLC > 8) return false; 
+#define ENABLE_EID      0x08
+#define MAPPED_SIDH     RXB0SIDH
+#define MAPPED_CONbits  RXB0CONbits
+#define MAPPED_TREQ     RXRTRRO
+
+bool CAN_SendOneMessage(CAN_Message_t *msg) {
+    unsigned char *pReg;
+    uint8_t loop;
     
-    // Load Message Data
-    TXB0D0 = msg->data[0];
-    TXB0D1 = msg->data[1];
-    TXB0D2 = msg->data[2];
-    TXB0D3 = msg->data[3];
-    TXB0D4 = msg->data[4];
-    TXB0D5 = msg->data[5];
-    TXB0D6 = msg->data[6];
-    TXB0D7 = msg->data[7];
-    
-    if(msg->EID) {
-        TXB0SIDH = (msg->MessageID >> 21);
-        TXB0SIDL |= (msg->MessageID & 0x1C0000) >> 13;
-        TXB0SIDL |= (msg->MessageID & 0x30000) >> 16;
-        TXB0EIDH = (msg->MessageID >> 8);
-        TXB0EIDL = (msg->MessageID);
-        TXB0SIDLbits.EXIDE = 1;
+    // Enable Extended IDs and Check Message Length
+    msg->Reserved = ENABLE_EID;
+    if(msg->DataLength > 8) {
+        msg->DataLength = 8;
     }
-    else { // Standard CAN ID - 11 bits
-        TXB0SIDH = (msg->MessageID >> 3);
-        TXB0SIDLbits.SID = (msg->MessageID & 0x07);
-        TXB0SIDLbits.EXIDE = 0;
+    msg->RTR = 0; // Not used
+    
+    // Ensure last TX has completed before sending another
+    while(MAPPED_CONbits.MAPPED_TREQ);
+    
+    // Load data into the TX buffers
+    pReg = &MAPPED_SIDH;
+    for(loop = 0; loop < CAN_MSG_LENGTH + msg->DataLength; loop++, pReg++) {
+        *pReg = msg->Array[loop];
     }
     
-    // Remote Transmit Request Bit (RTR)
-    TXB0DLCbits.TXRTR = msg->RTR ? 1 : 0;
-    
-    //Data Length Code Bits (DLC)
-    TXB0DLCbits.DLC = msg->DLC; // Send 1 byte of data
-    
-    TXB0CONbits.TXPRI = msg->priority; // Set Message Priority
-    TXB0CONbits.TXREQ = 1; // Request CAN Transmission
-    
-    while(TXB0CONbits.TXREQ) // Wait for transmission to complete
-    { 
-        
-    } 
-    // TODO: Enable intuerupts and callbacks on data TX and RX
+    // Send Message
+    MAPPED_CONbits.MAPPED_TREQ = 1;
     
     return true;
 }
@@ -167,51 +158,25 @@ This Function ...
 Parameters:	None
 Return:		None
 *********************************************************************/
-bool CAN_ReadOneMessage(CAN_Message_t *msg)
-{
-    // Check if there is a message to be read
-    if(!RXB0CONbits.RXFUL) return false;
+
+bool CAN_ReadOneMessage(CAN_Message_t *msg) {
+    unsigned char *pReg;
+    unsigned char loop;
     
-    if(msg == NULL) return false;
-    
-    if(RXB0SIDLbits.EID) { // Extended CAN ID - 29 bits
-        msg->EID = true;
-        msg->MessageID = RXB0SIDH;
-        msg->MessageID = msg->MessageID << 5;
-        msg->MessageID |= (RXB0SIDL & 0xE0) >> 3;
-        msg->MessageID |= (RXB0SIDL & 0x03);
-        msg->MessageID = (msg->MessageID << 8) | RXB0EIDH;
-        msg->MessageID = (msg->MessageID << 8) | RXB0EIDL;
-        // TODO: Finish getting EID from registers
+    // Read data from mapped receive buffers
+    pReg = &MAPPED_SIDH;
+    for(loop = 0; loop < CAN_MSG_LENGTH; loop++, pReg++) {
+        msg->Array[loop] = *pReg;
     }
-    else {  // Standard CAN ID - 11 bits
-        msg->EID = false;
-        msg->MessageID = RXB0SIDH;
-        msg->MessageID = msg->MessageID << 3;
-        msg->MessageID |= (RXB0SIDL & 0xE0) >> 5;
+    if(msg->DataLength > 8) {
+        msg->DataLength = 8;
+    }
+    for(loop = 0; loop < msg->DataLength; loop++, pReg++) {
+        msg->Data[loop] = *pReg;
     }
     
-    // Read Data Length Code
-    msg->DLC = RXB0DLCbits.DLC;
-    
-    //Read All Data Registers
-    msg->data[0] = RXB0D0;
-    msg->data[1] = RXB0D1;
-    msg->data[2] = RXB0D2;
-    msg->data[3] = RXB0D3;
-    msg->data[4] = RXB0D4;
-    msg->data[5] = RXB0D5;
-    msg->data[6] = RXB0D6;
-    msg->data[7] = RXB0D7;
-    
-    // Check if Remote Transmit Request (RTR)
-    msg->RTR = RXB0DLCbits.RXRTR ? true : false;
-    
-    // Clear full bit since data has been read
-    RXB0CONbits.RXFUL = 0;
-    
-    // Message Priority N/A
-    msg->priority = 0;
+    // Clear buffer full indicator
+    MAPPED_CONbits.RXFUL = 0;
     
     return true;
 }
@@ -341,9 +306,16 @@ This Function ...
 Parameters:	None
 Return:		None
 *********************************************************************/
+static uint8_t lastTXBufferUsed = 0;
+
 void CAN_TransmitMessages() {
     // Remove Oldest Message from TXQueue
     if(TXQueueCount > 0) {
+        // ToDo: Support Sending From other TX Buffer
+        
+        // Set the Window Address Bits to the Message Buffer
+        ECANCON = ECAN_SET_FIFO_MODE | 0x03; // Only Support sending with RX0 currently
+        
         CAN_SendOneMessage(&TXQueue[TXHead]);
         TXHead++;
         if(TXHead >= TX_QUEUE_SIZE) {
@@ -355,7 +327,7 @@ void CAN_TransmitMessages() {
         // TXQueue is Empty
         TXIntsEnabled = false;
         PIE5bits.TXBnIE = 0;
-        PIE5bits.TXBnIE = 0;
+        PIR5bits.TXBnIF = 0;
         return;
     }
 }
@@ -368,21 +340,33 @@ This Function ...
 Parameters:	None
 Return:		None
 *********************************************************************/
+#define FIFOEMPTY_MASK   0x80
+#define WINDOW_RX_BUFFER  0x10
+#define FIFO_POINTER_MASK 0x0F
 void CAN_ReceiveMessages() {
-    // Get the message
-    CAN_ReadOneMessage(&OneMessage);
     
-    // Place it in the Queue
-    if(TXQueueCount < RX_QUEUE_SIZE) {
-        RXQueue[RXTail] = OneMessage;
-        RXTail++;
-        if(RXTail >= RX_QUEUE_SIZE) {
-            RXTail = 0;
+    while(COMSTAT & FIFOEMPTY_MASK) {
+        // Set the Window Address Bits to the Message Buffer
+        ECANCON = ECAN_SET_FIFO_MODE | WINDOW_RX_BUFFER | (CANCON & FIFO_POINTER_MASK);
+        
+        // Read the message
+        CAN_ReadOneMessage(&OneMessage);
+        
+        // Place it in the Queue
+        if(TXQueueCount < RX_QUEUE_SIZE) {
+            RXQueue[RXTail] = OneMessage;
+            RXTail++;
+            if(RXTail >= RX_QUEUE_SIZE) {
+                RXTail = 0;
+            }
+            RXQueueCount++;
         }
-        RXQueueCount++;
-    }
-    else {
-        // Message Dropped
+        else {
+            // Message Dropped
+        }
+        
+        COMSTAT &= ~FIFOEMPTY_MASK;
+        COMSTAT &= ~FIFOEMPTY_MASK;
     }
 }
 
@@ -398,15 +382,25 @@ void CAN_SetBitrate(long bitrate)
 {
     switch(bitrate)
     {
-        case 625000: // 625kBit
-        {
+        case 1000000: { // 1 MBit/s
             BRGCON1 = BRGCON1_1MBIT;
             BRGCON2 = BRGCON2_1MBIT;
             BRGCON3 = BRGCON3_1MBIT;
             break;
         }
-        default:
-        {
+        case 625000: { // 625kBit/s
+            BRGCON1 = BRGCON1_625kBIT;
+            BRGCON2 = BRGCON2_625kBIT;
+            BRGCON3 = BRGCON3_625kBIT;
+            break;
+        }
+        case 500000: { // 500kBit/s
+            BRGCON1 = BRGCON1_500kBIT;
+            BRGCON2 = BRGCON2_500kBIT;
+            BRGCON3 = BRGCON3_500kBIT;
+            break;
+        }
+        default: { // Default = 500 kBit/s
             BRGCON1 = BRGCON1_1MBIT;
             BRGCON2 = BRGCON2_1MBIT;
             BRGCON3 = BRGCON3_1MBIT;

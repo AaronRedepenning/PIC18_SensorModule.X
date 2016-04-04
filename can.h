@@ -12,30 +12,33 @@
 extern "C" {
 #endif
     
-    // Data Types
-    typedef enum CAN_Msg_Priority {
-        LEVEL0 = 0, // Lowest Priority
-        LEVEL1 = 1,
-        LEVEL2 = 2,
-        LEVEL3 = 3  // Highest Priority
-    } CAN_MSG_PRIORITY;
+
+// Data Types
+
+#define CAN_MSG_LENGTH   5
+#define CAN_DATA_LENGTH  8
     
-    typedef struct {
-        uint32_t MessageID; // CAN Identifier Code
-        bool EID;           // Extended Identifier
-        bool RTR;           // Remote Transmit Request
-        uint8_t data[8];    // Up to 8 bytes of data
-        uint8_t DLC;        // Data Length Code
-        CAN_MSG_PRIORITY priority; // Message priority level
-    } CAN_Message_t;
-    
-    // Public API
-    void CAN_Init(long bitrate, bool loopback);
-    void CAN_DequeueMessage(CAN_Message_t *msg);
-    void CAN_EnqueueMessage(CAN_Message_t *msg);
-    bool CAN_TXQueueIsEmpty();
-    bool CAN_RXQueueIsEmpty();
-    void CAN_ISR();
+union CAN_MESSAGE_UNION {
+    struct {
+        uint8_t DestinationAddress;
+        uint8_t SourceAddress;
+        uint8_t Reserved;
+        uint8_t Command;
+        unsigned int DataLength         : 4;
+        unsigned int RTR                : 4;
+        uint8_t Data[CAN_DATA_LENGTH];
+    };
+    uint8_t Array[CAN_MSG_LENGTH + CAN_DATA_LENGTH];
+};
+typedef union CAN_MESSAGE_UNION CAN_Message_t;
+
+// Public API
+void CAN_Init(long bitrate);
+void CAN_DequeueMessage(CAN_Message_t *msg);
+void CAN_EnqueueMessage(CAN_Message_t *msg);
+bool CAN_TXQueueIsEmpty();
+bool CAN_RXQueueIsEmpty();
+void CAN_ISR();
 
 
 #ifdef	__cplusplus
