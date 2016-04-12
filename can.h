@@ -15,14 +15,14 @@ extern "C" {
 
 // Data Types
 
-#define CAN_MSG_LENGTH   5
-#define CAN_DATA_LENGTH  8
-    
+#define CAN_MSG_LENGTH      5
+#define CAN_DATA_LENGTH     8
+
 union CAN_MESSAGE_UNION {
     struct {
         uint8_t DestinationAddress;
-        uint8_t SourceAddress;
         uint8_t Reserved;
+        uint8_t SourceAddress;
         uint8_t Command;
         unsigned int DataLength         : 4;
         unsigned int RTR                : 4;
@@ -31,6 +31,11 @@ union CAN_MESSAGE_UNION {
     uint8_t Array[CAN_MSG_LENGTH + CAN_DATA_LENGTH];
 };
 typedef union CAN_MESSAGE_UNION CAN_Message_t;
+
+struct CAN_FLAGS {
+    bool TXIntsEnabled;
+};
+typedef struct CAN_FLAGS CAN_Flags_t;
 
 // Public API
 void CAN_Init(long bitrate);

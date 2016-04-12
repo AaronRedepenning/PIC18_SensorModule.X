@@ -1,6 +1,6 @@
 /* 
  * File:   main.h
- * Author: aaron
+ * Author: Aaron Redepenning
  *
  * Created on March 5, 2016, 3:58 PM
  */
@@ -94,6 +94,8 @@
 
 #include "hdc1000.h"
 #include "lps25hb.h"
+
+#include "T6Protocol.h"
 
 #ifdef	__cplusplus
 extern "C" {

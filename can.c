@@ -39,8 +39,7 @@ uint8_t         TXTail;
 uint8_t         TXQueueCount;
 CAN_Message_t   TXQueue[TX_QUEUE_SIZE];
 
-bool TXIntsEnabled;
-
+CAN_Flags_t CanFlags;
 
 void CAN_SetBitrate(long bitrate);
 void CAN_SetMode(uint8_t mode);
@@ -53,9 +52,12 @@ bool CAN_ReadOneMessage(CAN_Message_t *msg);
 /*********************************************************************
 CAN_Init
 
-This Function ...
+This Function initializes the CAN bus with a specified bit rate. Once
+ the CAN bus is set up it will transmit a network Discovery command
+ to get a CAN address from the Host Controller.
 
-Parameters:	None
+Parameters:	bitrate - The bitrate the CAN bus is using
+            
 Return:		None
 *********************************************************************/
 void CAN_Init(long bitrate)
@@ -100,24 +102,26 @@ void CAN_Init(long bitrate)
     PIR5 = 0;
     
     // Enable CAN interrupts on RX and TX
-    TXIntsEnabled = false;
+    CanFlags.TXIntsEnabled = false;
     PIE5bits.RXBnIE = 1;    // RX Interrupt Enable
     PIE5bits.IRXIE = 1;     // Error Message Interrupt Enable
     TXBIEbits.TX0IE = 1;    // TX Interrupt Enable
     BIE0 = 0xFF;            // RX Interrupt Enable for Programmable Buffers
     
-    // Put ECAN module in normal mode to start receiving messages
-    //CAN_SetMode(CAN_NORMAL_MODE);
-    CAN_SetMode(CAN_LOOPBACK_MODE);
+    // Put ECAN module in normal mode to start receiving/transmitting messages
+    CAN_SetMode(CAN_NORMAL_MODE);
+    //CAN_SetMode(CAN_LOOPBACK_MODE);
 }
 
 /*********************************************************************
 CAN_SendOneMessage
 
-This Function ...
+This Function sends a single message over the CAN bus. It gets called
+ by CAN_TransmitMessages(), and is passes a single CAN message to send.
 
-Parameters:	None
-Return:		None
+Parameters:	msg   - pointer to the CAN message to send  
+Return:		true  - Send was a success
+            false - Send was a failure
 *********************************************************************/
 #define ENABLE_EID      0x08
 #define MAPPED_SIDH     RXB0SIDH
@@ -153,10 +157,12 @@ bool CAN_SendOneMessage(CAN_Message_t *msg) {
 /*********************************************************************
 CAN_ReadOneMessage
 
-This Function ...
+This Function reads a single message from a recieve buffer. It will be
+ called by CAN_RecieveMessages().
 
-Parameters:	None
-Return:		None
+Parameters:	msg     - pointer to CAN message object to fill message with
+Return:		true    - read was a success
+            false   - read was a failure
 *********************************************************************/
 
 bool CAN_ReadOneMessage(CAN_Message_t *msg) {
@@ -208,8 +214,8 @@ void CAN_EnqueueMessage(CAN_Message_t *msg)
     }
     // Enable Interrupts
     PIE5bits.TXBnIE = 1;
-    if(!TXIntsEnabled) {
-        TXIntsEnabled = true;
+    if(!CanFlags.TXIntsEnabled) {
+        CanFlags.TXIntsEnabled = true;
         PIR5bits.TXBnIF = 1; // Throw Interrupt to TX CAN Message
     }
 }
@@ -325,7 +331,7 @@ void CAN_TransmitMessages() {
     }
     else {
         // TXQueue is Empty
-        TXIntsEnabled = false;
+        CanFlags.TXIntsEnabled = false;
         PIE5bits.TXBnIE = 0;
         PIR5bits.TXBnIF = 0;
         return;
@@ -352,6 +358,7 @@ void CAN_ReceiveMessages() {
         // Read the message
         CAN_ReadOneMessage(&OneMessage);
         
+
         // Place it in the Queue
         if(TXQueueCount < RX_QUEUE_SIZE) {
             RXQueue[RXTail] = OneMessage;
