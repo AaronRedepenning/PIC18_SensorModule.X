@@ -92,6 +92,7 @@
 #include "i2c_master.h"
 #include "can.h"
 
+#include "Adafruit_MPL3115A2.h"
 #include "hdc1000.h"
 #include "lps25hb.h"
 

@@ -1,9 +1,13 @@
 /* 
  * File:   T6Protocol.h
- * Author: aaron
+ * Author: Aaron Redepenning
  *
  * Created on April 11, 2016, 7:06 PM
  */
+
+////////////////////////////////////////////////////////////////////////////////
+// Global Defines, types, data
+////////////////////////////////////////////////////////////////////////////////
 
 #ifndef T6PROTOCOL_H
 #define	T6PROTOCOL_H
@@ -11,17 +15,21 @@
 #ifdef	__cplusplus
 extern "C" {
 #endif
-
+    
+// MAC Address
 #define MAC_ADDRESS_LENGTH  6
 #define MAC_ADDRESS         { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }
-#define BITRATE_500KHZ      500000
 
+// Bit-rates
+#define BITRATE_500KHZ      500000
 #define T6_CAN_BITRATE      BITRATE_500KHZ
     
-// Command Set
-#define T6_CMD_DISCOVER             'D'
-#define T6_CMD_PROVIDE_ADDRESS      'A'
-#define T6_CMD_SAMPLE               'S'
+// T6 Command Set
+#define T6CMD_DISCOVERY         'D'
+#define T6CMD_ASSIGN_ADDRESS    'A'
+#define T6CMD_SAMPLE_REQUEST    'S'
+#define T6CMD_SENSOR_UPDATE     'U'
+#define T6CMD_ERROR             'E'
 
 enum DEVICE_TYPE {
     INVALID     = 0x00,
@@ -36,10 +44,12 @@ struct T6_STATUS_FLAGS {
 };
 typedef struct T6_STATUS_FLAGS T6_Flags_t;
 
+////////////////////////////////////////////////////////////////////////////////
+// Public Functions
+////////////////////////////////////////////////////////////////////////////////
+
 void T6Protocol_Init(uint8_t dipStatus, DeviceType dType);
 void T6Protocol_AppPoll();
-    
-// Callback for Sensor Sample Message
 
 #ifdef	__cplusplus
 }

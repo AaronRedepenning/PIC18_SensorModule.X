@@ -7,6 +7,10 @@
 
 #include "main.h"
 
+////////////////////////////////////////////////////////////////////////////////
+// Global Variables
+////////////////////////////////////////////////////////////////////////////////
+
 // Interrupt Handler for CAN Messages
 void interrupt InterruptVector( void )
 {
@@ -28,11 +32,7 @@ void GlobalInterruptEnable() {
 void BoardInit() {
     // Initialize Peripherals
     PORTS_Init();
-    I2CMaster_Init();
-    
-    // Initialize Sensors
-    HDC1000_Init(0, DEGREES_F); // Temperature/Humidity
-    LPS25HB_Init();             // Pressure
+    // I2CMaster_Init();
     
     // Initialize CAN and and the T6 Application
     T6Protocol_Init(0x00, THP_SENSOR);
@@ -45,7 +45,7 @@ void BoardInit() {
 void main(void) {
     
     BoardInit();
-    
+        
     while(1) {
         T6Protocol_AppPoll();
     }

@@ -360,7 +360,7 @@ void CAN_ReceiveMessages() {
         
 
         // Place it in the Queue
-        if(TXQueueCount < RX_QUEUE_SIZE) {
+        if(RXQueueCount < RX_QUEUE_SIZE) {
             RXQueue[RXTail] = OneMessage;
             RXTail++;
             if(RXTail >= RX_QUEUE_SIZE) {

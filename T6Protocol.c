@@ -6,13 +6,17 @@
 #include "can.h"
 
 #define T6_BROADCAST_ADDRESS    0xFF
-#define T6_DEFAULT_ADDRESS      0x00
+#define T6_NULL_ADDRESS         0x00
 
 // Global Variables
 uint8_t MACAddress[MAC_ADDRESS_LENGTH] = MAC_ADDRESS;
 uint8_t CAN_Address;
 CAN_Message_t RxMessage;
+CAN_Message_t TxMessage;
 T6_Flags_t T6StatusFlags;
+
+// Function Prototypes
+void T6Protocol_RespondToSampleRequest(uint8_t reqAddr);
 
 bool CompareMACAddress(uint8_t *OtherMAC) {
     int i;
@@ -28,49 +32,79 @@ bool CompareMACAddress(uint8_t *OtherMAC) {
 }
 
 void T6Protocol_Init(uint8_t dipState, DeviceType dType) {
-    CAN_Message_t DiscoverMsg;
-    DiscoverMsg.DestinationAddress = T6_BROADCAST_ADDRESS;
-    DiscoverMsg.SourceAddress = T6_DEFAULT_ADDRESS;
-    DiscoverMsg.Command = T6_CMD_DISCOVER;
-    DiscoverMsg.Data[0] = dipState;
-    DiscoverMsg.Data[1] = dType;
-    for(uint8_t i = 0; i < MAC_ADDRESS_LENGTH; i++) {
-        DiscoverMsg.Data[i + 2] = MACAddress[i];
+    uint8_t index;
+    
+    // Build Network Discovery Message
+    TxMessage.DestinationAddress = T6_BROADCAST_ADDRESS;
+    TxMessage.SourceAddress = T6_NULL_ADDRESS;
+    TxMessage.Command = T6CMD_DISCOVERY;
+    TxMessage.Data[0] = dipState;
+    TxMessage.Data[1] = dType;
+    for(index = 0; index < MAC_ADDRESS_LENGTH; index++) {
+        TxMessage.Data[index + 2] = MACAddress[index];
     }
-    DiscoverMsg.DataLength = 8;
+    TxMessage.DataLength = 8;
     
     CAN_Init(T6_CAN_BITRATE);
-    
-    // Enqueue Discovery message to be sent
-    CAN_EnqueueMessage(&DiscoverMsg);
-    T6StatusFlags.HasClaimedAddress = false;
     T6StatusFlags.HasRequestedAddress = true;
+    T6StatusFlags.HasClaimedAddress = false;
+    CAN_EnqueueMessage(&TxMessage);
 }
 
 void T6Protocol_AppPoll() {
-    if(!CAN_RXQueueIsEmpty()) {
-        CAN_DequeueMessage(&RxMessage);
-        
-        switch(RxMessage.Command) {
-            case T6_CMD_DISCOVER: {
-                // Don't do anything for discovery message. This is only for
-                // the host controller (server) to respond to
+    // If there is no message to process, just return
+    if(CAN_RXQueueIsEmpty()) return;
+    
+    // Otherwise, get the message and process it
+    CAN_DequeueMessage(&RxMessage);
+    
+    switch(RxMessage.Command) {
+        case T6CMD_ASSIGN_ADDRESS:
+            // Check if this is our new address
+            if(CompareMACAddress(RxMessage.Data) && T6StatusFlags.HasRequestedAddress) {
+                CAN_Address = RxMessage.Data[6];
+                T6StatusFlags.HasClaimedAddress = true;
+                T6StatusFlags.HasRequestedAddress = false;
             }
-            case T6_CMD_PROVIDE_ADDRESS: {
-                // This could be our requested address. Check if we requested an
-                // address and this provided address is for this device
-                if(T6StatusFlags.HasRequestedAddress && CompareMACAddress(RxMessage.Data)) {
-                    T6StatusFlags.HasClaimedAddress = true;
-                    T6StatusFlags.HasRequestedAddress = false;
-                    CAN_Address = RxMessage.Data[6];
-                }
+            break;
+        case T6CMD_SAMPLE_REQUEST:
+            // Call user defined Sample Request callback to get
+            // data packet to send
+            if(T6StatusFlags.HasClaimedAddress && (RxMessage.DestinationAddress == CAN_Address)) {
+                T6Protocol_RespondToSampleRequest(RxMessage.SourceAddress);
             }
-            case T6_CMD_SAMPLE: {
-                // Sensors Sample was requested, to send this use the callback
-            }
-            default: {
-                
-            }
-        }
+            break;
+        case T6CMD_SENSOR_UPDATE:
+        case T6CMD_DISCOVERY:
+        case T6CMD_ERROR:
+            // All of these messages are processed by the host controller,
+            // so just ignore these messages
+        default:
+            // Message not recognized to throw it away
+            break;
     }
+}
+
+static float pressure, temperature, humidity, co2;
+void T6Protocol_RespondToSampleRequest(uint8_t reqAddr) {
+    
+    // Sensor Readings Message
+    TxMessage.DestinationAddress = reqAddr;
+    TxMessage.SourceAddress = CAN_Address;
+    TxMessage.Command = T6CMD_SENSOR_UPDATE;
+    
+    // Temperature Sample - 77.8 F
+    TxMessage.Data[0] = 0x03;
+    TxMessage.Data[1] = 0x0A;
+    
+    // Humidity Sample - 84 %
+    TxMessage.Data[2] = 84;
+    
+    // Pressure Sample - 1023.7
+    TxMessage.Data[3] = 0x27;
+    TxMessage.Data[4] = 0xFD;
+    
+    TxMessage.DataLength = 5;
+    
+    CAN_EnqueueMessage(&TxMessage);
 }
