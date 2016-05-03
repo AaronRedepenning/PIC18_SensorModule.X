@@ -25,6 +25,10 @@ bool Adafruit_MPL3115A2_Init() {
         MPL3115A2_PT_DATA_CFG_TDEFE |
         MPL3115A2_PT_DATA_CFG_PDEFE |
         MPL3115A2_PT_DATA_CFG_DREM);
+    
+    // First reading is always bad for some reason
+    Adafruit_MPL3115A2_getPressure();
+    
     return true;
 }
 
@@ -60,16 +64,12 @@ float Adafruit_MPL3115A2_getPressure() {
     I2CMaster_Stop();
     
     // Calculate pressure
-    for(int i = 0; i < 2; i++) {
-        pressure |= buf[i];
-        pressure << 8;
-    }
-    pressure |= buf[2];
-    pressure >> 4; // TODO: Can get a more accurate reading if don't 
-                   // get rid of the bottom 4 bits
+    pressure = buf[0];
+    pressure = (pressure << 8) | buf[1];
+    pressure = (pressure << 8) | buf[2];
                    
-    float baro = pressure;
-    baro /= 4.0;
+    float baro = (float)(pressure);
+    baro /= 6400; // Hectopascals
     return baro;
 }
 
@@ -92,10 +92,10 @@ void write8(uint8_t reg, uint8_t data) {
 uint8_t read8(uint8_t reg) {    
     
     I2CMaster_Start();
-    I2CMaster_Write(0xC0, reg, NULL, 0);
+    I2CMaster_Write(MPL3115A2_ADDRESS, reg, NULL, 0);
     
     I2CMaster_Restart();
-    I2CMaster_Read(0xC0, _buffer, 1);
+    I2CMaster_Read(MPL3115A2_ADDRESS, _buffer, 1);
     I2CMaster_Stop();
     return _buffer[0];
 }

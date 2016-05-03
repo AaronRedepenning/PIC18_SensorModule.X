@@ -28,6 +28,8 @@ extern "C" {
     
     void I2CMaster_Write(uint8_t address, uint8_t regAddress, uint8_t *pData, uint8_t len);
     
+    void I2CMaster_Write8(uint8_t b);
+    
     void I2CMaster_Read(uint8_t address, uint8_t *pData, uint8_t count);
 
 

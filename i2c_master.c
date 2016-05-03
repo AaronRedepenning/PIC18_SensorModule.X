@@ -5,7 +5,7 @@ void I2CMaster_Init(void)
     SSPSTATbits.SMP = 1; // Slew rate control disabled
     SSPSTATbits.CKE = 0; // Disable SMBus logic levels
     SSPCON1bits.SSPM = 0b1000; // I2C Master mode, clock = Fosc / [4 * (SSPADD)]
-    SSPADD = 0x27;  // 100kHz Clock assuming Fosc = 16 MHz
+    SSPADD = 0x14;  // 200kHz Clock assuming Fosc = 16 MHz // Old 0x27 - 100kHz
     SSPCON2 = 0x00; // Ensure all events are disabled before enabling the MSSP
     SSPCON1bits.SSPEN = 1; // Enable the MSSP
 }
@@ -50,6 +50,14 @@ void I2CMaster_Write(uint8_t address, uint8_t regAddress, uint8_t *pData, uint8_
         while(!I2C_IF) { }
         I2C_IF = 0;
     }
+}
+
+void I2CMaster_Write8(uint8_t b) {
+    I2C_IF = 0;
+    
+    SSPBUF = b;
+    while(!I2C_IF) { }
+    I2C_IF = 0;
 }
 
 void I2CMaster_Read(uint8_t address, uint8_t *pData, uint8_t count)

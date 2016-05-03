@@ -31,13 +31,6 @@ extern "C" {
 #define T6CMD_SENSOR_UPDATE     'U'
 #define T6CMD_ERROR             'E'
 
-enum DEVICE_TYPE {
-    INVALID     = 0x00,
-    THP_SENSOR  = 0x01,
-    THPC_SENSOR = 0x02
-};
-typedef enum DEVICE_TYPE DeviceType;
-
 struct T6_STATUS_FLAGS {
     bool HasRequestedAddress;
     bool HasClaimedAddress;
@@ -48,7 +41,7 @@ typedef struct T6_STATUS_FLAGS T6_Flags_t;
 // Public Functions
 ////////////////////////////////////////////////////////////////////////////////
 
-void T6Protocol_Init(uint8_t dipStatus, DeviceType dType);
+void T6Protocol_Init(uint8_t dipStatus, bool hasCo2);
 void T6Protocol_AppPoll();
 
 #ifdef	__cplusplus

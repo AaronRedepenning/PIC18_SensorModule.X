@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "T6Protocol.h"
 #include "can.h"
+#include "main.h"
 
 #define T6_BROADCAST_ADDRESS    0xFF
 #define T6_NULL_ADDRESS         0x00
@@ -31,7 +32,7 @@ bool CompareMACAddress(uint8_t *OtherMAC) {
     }
 }
 
-void T6Protocol_Init(uint8_t dipState, DeviceType dType) {
+void T6Protocol_Init(uint8_t dipState, bool hasCo2) {
     uint8_t index;
     
     // Build Network Discovery Message
@@ -39,7 +40,7 @@ void T6Protocol_Init(uint8_t dipState, DeviceType dType) {
     TxMessage.SourceAddress = T6_NULL_ADDRESS;
     TxMessage.Command = T6CMD_DISCOVERY;
     TxMessage.Data[0] = dipState;
-    TxMessage.Data[1] = dType;
+    TxMessage.Data[1] = (uint8_t)hasCo2;
     for(index = 0; index < MAC_ADDRESS_LENGTH; index++) {
         TxMessage.Data[index + 2] = MACAddress[index];
     }
@@ -70,7 +71,7 @@ void T6Protocol_AppPoll() {
         case T6CMD_SAMPLE_REQUEST:
             // Call user defined Sample Request callback to get
             // data packet to send
-            if(T6StatusFlags.HasClaimedAddress && (RxMessage.DestinationAddress == CAN_Address)) {
+            if(T6StatusFlags.HasClaimedAddress && (RxMessage.DestinationAddress == T6_BROADCAST_ADDRESS)) {
                 T6Protocol_RespondToSampleRequest(RxMessage.SourceAddress);
             }
             break;
@@ -87,22 +88,31 @@ void T6Protocol_AppPoll() {
 
 static float pressure, temperature, humidity, co2;
 void T6Protocol_RespondToSampleRequest(uint8_t reqAddr) {
+    uint16_t util;
+    
+    // Read the temperature humidity sensor
+    HIH8000_ReadHumidityTemperature(&temperature, &humidity);
+            
+    // Read the pressure sensor
+    pressure = Adafruit_MPL3115A2_getPressure();
     
     // Sensor Readings Message
     TxMessage.DestinationAddress = reqAddr;
     TxMessage.SourceAddress = CAN_Address;
     TxMessage.Command = T6CMD_SENSOR_UPDATE;
     
-    // Temperature Sample - 77.8 F
-    TxMessage.Data[0] = 0x03;
-    TxMessage.Data[1] = 0x0A;
+    // Temperature Sample
+    util = (uint16_t)(temperature * 10);
+    TxMessage.Data[0] = (util >> 8) & 0x00FF;
+    TxMessage.Data[1] = util & 0x00FF;
     
-    // Humidity Sample - 84 %
-    TxMessage.Data[2] = 84;
+    // Humidity Sample
+    TxMessage.Data[2] = (uint8_t)humidity;
     
-    // Pressure Sample - 1023.7
-    TxMessage.Data[3] = 0x27;
-    TxMessage.Data[4] = 0xFD;
+    // Pressure Sample
+    util = (uint16_t)(pressure * 10);
+    TxMessage.Data[3] = (util >> 8) & 0x00FF;
+    TxMessage.Data[4] = (util) & 0x00FF;
     
     TxMessage.DataLength = 5;
     
