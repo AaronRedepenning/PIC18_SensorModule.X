@@ -34,6 +34,7 @@ uint8_t getDipState() {
     return (PORTB & 0x1F);
 }
 
+//
 void BoardInit() {
     // Initialize Peripherals
     PORTS_Init();
@@ -55,7 +56,7 @@ void BoardInit() {
     
     // Initialize CAN and and the T6 Application
     uint8_t dip = getDipState();
-    T6Protocol_Init(0x00, false);
+    T6Protocol_Init(dip, false);
     
     // Enable Global Interrupts - required for CAN communications
     GlobalInterruptEnable();

@@ -34,7 +34,7 @@ bool Adafruit_MPL3115A2_Init() {
 
 /**************************************************************************/
 /*!
-    @brief  Gets the floating-point pressure level in kPa
+    @brief  Gets the floating-point pressure level in hPa
 */
 /**************************************************************************/
 float Adafruit_MPL3115A2_getPressure() {
